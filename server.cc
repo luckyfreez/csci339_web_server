@@ -30,10 +30,14 @@ int main(int argc, char **argv) {
   int type = SOCK_STREAM;
   int protocol = IPPROTO_TCP;
   int sock = socket(domain, type, protocol);
+  std::cout << "sock = " << sock;
+  std::cout.flush();
 
   // Bind 
-  struct sockaddr_in myaddr;
+  struct sockaddr_in myaddr, remote;
 
+  std::cout << "haha";
+  std::cout.flush();
   myaddr.sin_port = htons(8101);
   myaddr.sin_family = AF_INET;
   myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -46,23 +50,27 @@ int main(int argc, char **argv) {
   int nrecv;
 
 
-    // Listen
-    int backlog = 100;
-    listen(sock, backlog);
+  // Listen
+  int backlog = 100;
+  listen(sock, backlog);
+  std::cout << "listen = " << listen;
+  std::cout.flush();
 
-    // Accept
-    unsigned int temp = sizeof(myaddr);
-    temp_sock = accept(sock, (struct sockaddr*)&myaddr, (unsigned int *)temp);
+  // Accept
+  unsigned int remotelen = sizeof(remote);
+  temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
+  std::cout << "temp_sock = " << temp_sock;
+  std::cout.flush();
 
-    //while ((nrecv = recv(temp_sock, buf, sizeof(buf), 0)) > 0) {
-      ////write(1, buf, nrecv);
-    //}
+  //while ((nrecv = recv(temp_sock, buf, sizeof(buf), 0)) > 0) {
+  ////write(1, buf, nrecv);
+  //}
 
   while (true) {
     while (true) {
-      std::cout << "1";
       while ((nrecv = recv(temp_sock, buf, sizeof(buf), 0)) > 0) {
         write(1, buf, nrecv);
+        std::cout.flush();
       }
     }
 

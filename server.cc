@@ -57,6 +57,7 @@ int main(int argc, char **argv) {
   std::cout.flush();
 
   // Accept
+  while(true){
   unsigned int remotelen = sizeof(remote);
   temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
   std::cout << "temp_sock = " << temp_sock;
@@ -66,17 +67,31 @@ int main(int argc, char **argv) {
   ////write(1, buf, nrecv);
   //}
 
+  /*
   while (true) {
-    while (true) {
-      while ((nrecv = recv(temp_sock, buf, sizeof(buf), 0)) > 0) {
-        write(1, buf, nrecv);
-        std::cout.flush();
-      }
+    while ((nrecv = recv(temp_sock, buf, sizeof(buf), 0)) > 0) {
+      write(temp_sock, buf, nrecv);
+      std::cout.flush();
     }
-
 
     //close (temp_sock);
 
+  }
+  */
+
+  int fd, nread;
+  //char buf[1024];  //C has no “String” class
+
+  fd = open("index.html", O_RDONLY);
+
+  if (fd == -1) {
+    cout << "error" << endl;
+    return -1; //error opening file
+  }
+
+  while ((nread = read(fd, buf, sizeof(buf))) > 0) 
+    write(temp_sock, buf, nread);
+  close (fd);
   }
   
   return 0;

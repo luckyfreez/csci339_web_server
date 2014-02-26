@@ -1,14 +1,20 @@
-#include <iostream>
 #include <cstdlib>
 #include <fcntl.h>
-#include <vector>
+#include <iostream>
 #include <netinet/in.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <vector>
 
 using namespace std;
 
 string file_path;
 void *manage_conn(void *ptr); 
+void parse_request(int sock, char *buf);
+void send_error(int sock, const string& err);
+void send_file(int sock, const string& file_path);
+bool parse_get_request(int sock, string request, string& file_path, string& request_suffix);
+bool validate_file(int sock, const string& file_path);
 
 int main(int argc, char **argv) {
 
@@ -71,20 +77,94 @@ void *manage_conn(void *ptr) {
  
   while (true) {
     nrecv = recv(temp_sock, buf, sizeof(buf), 0);
-      cout << "Here is nrecv: " << nrecv << endl;
-      write(temp_sock, buf, nrecv);
-    cout << "finish reading one request" << endl;
 
-    // send the index.html back
-    fd = open("index.html", O_RDONLY);
-    if (fd == -1) {
-      cout << "error" << endl;
-      //return (void*)&value; //error opening file
-    }
-    while ((nread = read(fd, buf, sizeof(buf))) > 0) 
-      write(temp_sock, buf, nread);
-    close (fd);
+    parse_request(temp_sock, buf);
+
   }
+}
+
+void parse_request(int sock, char* buf) {
+  string request(buf);
+
+  string file_path;
+  string request_suffix;
+
+  if (parse_get_request(sock, request, file_path, request_suffix)) {
+    if (validate_file(sock, file_path)) {
+      // send file.
+      send_file(sock, file_path);
+    } else {
+      send_error(sock, "GET request failed");
+    }
+  } else {
+    send_error(sock, "not a valid GET request");
+  }
+}
+
+void send_error(int sock, const string& err) {
+  const char *err_char = err.c_str();
+  write(sock, err_char, err.size());
+  write(sock, "\n", err.size());
+}
+
+void send_file(int sock, const string& file_path) {
+  // send the file back
+  cout << "sending file " << file_path << endl;
+  char buf[1000];
+  int nread;
+  int fd = open(file_path.c_str(), O_RDONLY);
+  if (fd == -1) {
+    send_error(sock, "error opening the file");
+  }
+  while ((nread = read(fd, buf, sizeof(buf))) > 0) 
+    write(sock, buf, nread);
+  close (fd);
+}
+
+bool parse_get_request(int sock, string request, string& file_path, string& request_suffix) {
+  //string document_root = "~/cs339/csci339_web_server";
+  //string document_root = "/home/cs-faculty/fern";
+  string document_root = ".";
+  string rel_file_path, abs_file_path;
+  int space_index;
+  file_path = "joi";
+
+  if (request.find("GET") == 0 and request.size() >= 4) {
+
+    // The request string starts with "GET".
+    request = request.substr(4);
+    cout << "after taking out \'GET\', request = \'" << request << "\'" << endl;
+
+    // Parse the file name
+    if ((space_index = request.find(" ")) > 0 and request.size() >= space_index + 1) {
+      file_path = document_root + request.substr(0, space_index);
+      request_suffix = request.substr(space_index + 1);
+      return true;
+    } 
+  }
+  return false;
+}
+
+bool validate_file(int sock, const string& file_path) {
+  // Check to avoid visiting the parent path
+  if (file_path.find("../") != string::npos) {
+    send_error(sock, "bad request - trying to visit parent directory");
+    return false;
+  }
+
+  // Check permission
+  struct stat results;  
+  const char *filename_char = file_path.c_str();
+
+  if (stat(filename_char, &results) != 0) {
+    send_error(sock, "file doesn't exist");
+    return false;
+  }
+
+  if (!(results.st_mode & S_IROTH)) {
+    send_error(sock, "file not readable");
+  } 
+  return true;
 }
 
 /*

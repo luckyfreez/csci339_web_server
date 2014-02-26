@@ -6,7 +6,8 @@ For details, see our writeup.
 
 // TODO: Convert char arrays into C++ strings?
 
-
+// TODO: Explain all o these?
+#include <stdio.h>
 #include <cstdlib>
 #include <fcntl.h>
 #include <iostream>
@@ -14,8 +15,7 @@ For details, see our writeup.
 #include <string.h>
 #include <sys/stat.h>
 #include <vector>
-
-// Used for string parsing
+#include <ctime>
 #include <sstream>
 #include <algorithm>
 #include <iterator>
@@ -34,6 +34,15 @@ void send_file(int sock, const string& file_path);
 bool parse_get_request(int sock, string request, string& file_path, string& request_suffix);
 bool validate_file(int sock, const string& file_path);
 
+// Current date/time. Format is YYYY-MM-DD.HH:mm:ss
+const string current_date_time() {
+  time_t now = time(0);
+  struct tm tstruct;
+  char buf[80];
+  tstruct = *localtime(&now);
+  strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &tstruct);
+  return buf;
+}
 
 int main(int argc, char **argv) {
 
@@ -95,6 +104,8 @@ void *manage_conn(void *ptr) {
   char buf[4096];
   while (true) {
     nrecv = recv(temp_sock, buf, sizeof(buf), 0); // Returns number of bytes read in the buffer
+    // cout << "Current buffer: " << buf << endl;
+    // cout << "End of buffer." << endl;
     parse_request(temp_sock, buf);
   }
 }
@@ -111,7 +122,6 @@ vector<string> check_initial_request(int sock, string request) {
   }
   return tokens;
 }
-
 
 // Given a request by the client, parse it and check for correctness, etc.
 // Sends back status codes, supporting 200, 400, 403, and 404 status codes
@@ -133,18 +143,16 @@ void parse_request(int sock, char* buf) {
     request_suffix = tokens.at(2);
  
     // Now check for permissions. validate_file method will print out 403 and 404 messages if needed
-    if (validate_file(sock, full_path)) { // TODO
-      send_message(sock, http_type + " 200 OK");
+    if (validate_file(sock, full_path)) { // TODO: Put this off into a separate procedure?
+
       send_file(sock, full_path);
     } 
   } else {
     send_message(sock, "HTTP/1.0 400 Bad Request"); // TODO: modify for type 1.0 1.1?
   }
 
-  // After request, default to original values
-
   // Sources we read suggest closing after each client request. (TODO: Actually, this gives me some problems...)
-  // close(sock);
+  close(sock);
 }
 
 
@@ -157,6 +165,24 @@ void send_message(int sock, const string& message) {
 }
 
 
+// Helper method for the split function
+vector<string> &split(const string &s, char delim, vector<string> &elems) {
+    stringstream ss(s);
+    string item;
+    while (getline(ss, item, delim)) {
+        elems.push_back(item);
+    }
+    return elems;
+}
+
+// String splitting based on a given delimeter
+vector<string> split(const string &s, char delim) {
+    vector<string> elems;
+    split(s, delim, elems);
+    return elems;
+}
+
+
 void send_file(int sock, const string& file_path) {
   // send the file back
   // cout << "sending file " << file_path << endl;
@@ -164,8 +190,39 @@ void send_file(int sock, const string& file_path) {
   int nread;
   int fd = open(file_path.c_str(), O_RDONLY);
   if (fd == -1) {
-    send_message(sock, "Error: problem with opening the file");
+    send_message(sock, "Error: problem with opening the file"); // TODO change this?
   }
+  
+  // Now that it seems to be okay, let's print out the result! Start with some required headers, then the full file.
+  send_message(sock, "\n" + http_type + " 200 OK");
+  send_message(sock, "Date: " + current_date_time()); // TODO change date to say name of month to make it clear
+
+  // file types to support: html, txt, jpg, and gif. Seems like types text/html go together, though.
+  // Algorithm: take file path, split based on periods. then go to the LAST one, which gives file extension.
+  vector<string> file_path_split = split(file_path, '.');
+  string file_extension = file_path_split.at(file_path_split.size() - 1);
+  if (file_extension == "html" || file_extension == "text") {
+    send_message(sock, "Content-Type: text/html");
+  } else if (file_extension == "jpg") {
+    send_message(sock, "Content-Type: jpg");
+  } else if (file_extension == "gif") {
+    send_message(sock, "Content-Type: gif");
+  } else {
+    send_message(sock, "Content-Type: unknown"); // TODO: want to change this?
+  }
+
+  // Now do length TODO better way?
+  FILE *p_file = fopen(file_path.c_str(), "rb");
+  fseek(p_file, 0, SEEK_END);
+  int size = ftell(p_file);
+  fclose(p_file);
+  stringstream sstm;
+  sstm << "Content-Length: " << size;
+  string output = sstm.str();
+  send_message(sock, output);
+  
+  // Now print the HTML! Whew!
+  send_message(sock, "");
   while ((nread = read(fd, buf, sizeof(buf))) > 0) 
     write(sock, buf, nread);
   close (fd);

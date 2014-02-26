@@ -3,13 +3,22 @@
 #include <fcntl.h>
 #include <vector>
 #include <netinet/in.h>
+#include <string.h>
 
 using namespace std;
 
-
+string file_path;
 void *manage_conn(void *ptr); 
 
 int main(int argc, char **argv) {
+
+  // For dealing with command line arguments
+  if (argc != 5 || (strcmp(argv[1],"-document_root") != 0 || strcmp(argv[3],"-port") != 0)) {
+    cout << "Usage: ./server -document_root [file_path] -port [port_num]" << endl;
+    return -1;
+  }
+  file_path = argv[2];
+  int port = atoi(argv[4]);
 
   // Vector of threads
   vector<pthread_t> threads;
@@ -22,11 +31,12 @@ int main(int argc, char **argv) {
   cout << "sock = " << sock << endl;
 
   // Now allow socket reuse
-  // if (setsockopt(sock, ) < 0) exit(1);
+  int optval = 1;
+  if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval) < 0) exit(1);
 
   // Bind 
   struct sockaddr_in myaddr, remote;
-  myaddr.sin_port = htons(8101);
+  myaddr.sin_port = htons(port);
   myaddr.sin_family = AF_INET;
   myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
   if(bind(sock, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) exit(1);
@@ -99,4 +109,3 @@ void *manage_conn(void *ptr) {
     }
   }
 */ 
-} 

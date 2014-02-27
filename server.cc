@@ -1,12 +1,14 @@
 /*
 CSCI 339: Distributed Systems, Homework 1
 (c) February 2014 by Daniel Seita and Lucky Zhang
-For details, see our writeup.
+
+Documentation for our methods is in the server.h file. For additional details, see our writeup.
 */
 
 // TODO: Convert char arrays into C++ strings?
+// TODO: Convert all strings to std::strings, same with anything else that uses std...
 
-// TODO: Explain all o these?
+#include "server.h"
 #include <stdio.h>
 #include <cstdlib>
 #include <fcntl.h>
@@ -20,29 +22,12 @@ For details, see our writeup.
 #include <algorithm>
 #include <iterator>
 
-
 using namespace std;
 
-// TODO: Documentation, and get a header file set up, so we don't have to put all this up here.
 
-string document_root;
-string http_type = "HTTP/1.0"; // Default to 1.0
-void *manage_conn(void *ptr); 
-void parse_request(int sock, char *buf);
-void send_message(int sock, const string& message);
-void send_file(int sock, const string& file_path);
-bool parse_get_request(int sock, string request, string& file_path, string& request_suffix);
-bool validate_file(int sock, const string& file_path);
+string document_root;             // File path to prepend to local path
+string http_type = "HTTP/1.0";    // Default to 1.0
 
-// Current date/time. Format is YYYY-MM-DD.HH:mm:ss
-const string current_date_time() {
-  time_t now = time(0);
-  struct tm tstruct;
-  char buf[80];
-  tstruct = *localtime(&now);
-  strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &tstruct);
-  return buf;
-}
 
 int main(int argc, char **argv) {
 
@@ -111,22 +96,6 @@ void *manage_conn(void *ptr) {
 }
 
 
-// Assumes we are using GET only. Checks the first and third arguments.
-// If it looks okay, we set the correct HTTP protocol to use. Splits string based on whitespaces
-vector<string> check_initial_request(int sock, string request) {
-  stringstream ss(request);
-  string buf;
-  vector<string> tokens;
-  while (ss >> buf) {
-    tokens.push_back(buf);
-  }
-  return tokens;
-}
-
-// Given a request by the client, parse it and check for correctness, etc.
-// Sends back status codes, supporting 200, 400, 403, and 404 status codes
-// Headers: support Content-Type, Content-Length, and Date headers
-// File types: HTML, TXT, JPG, and GIF files (not for this method)
 void parse_request(int sock, char* buf) {
   string request(buf);
   string full_path;
@@ -134,7 +103,6 @@ void parse_request(int sock, char* buf) {
 
   // Check the initial request line if it is of the form GET [directory] /HTTP{1.0, 1.1}
   vector<string> tokens = check_initial_request(sock, request);
-
   if (tokens.size() >= 3 && tokens.at(0) == "GET" && (tokens.at(2) == "HTTP/1.0" || tokens.at(2) == "HTTP/1.1")) {
     if (tokens.at(2) == "HTTP/1.1") {
       http_type = "HTTP/1.1";
@@ -143,12 +111,11 @@ void parse_request(int sock, char* buf) {
     request_suffix = tokens.at(2);
  
     // Now check for permissions. validate_file method will print out 403 and 404 messages if needed
-    if (validate_file(sock, full_path)) { // TODO: Put this off into a separate procedure?
-
+    if (validate_file(sock, full_path)) {
       send_file(sock, full_path);
     } 
   } else {
-    send_message(sock, "HTTP/1.0 400 Bad Request"); // TODO: modify for type 1.0 1.1?
+    send_message(sock, "HTTP/1.0 400 Bad Request");
   }
 
   // Sources we read suggest closing after each client request. (TODO: Actually, this gives me some problems...)
@@ -156,30 +123,21 @@ void parse_request(int sock, char* buf) {
 }
 
 
-// Sends message to the client-side, to see the direct results of his/her actions
+vector<string> check_initial_request(int sock, string request) {
+  stringstream ss(request);
+  string buf;
+  vector<string> tokens; // Elements here are strings from request, split by whitespaces
+  while (ss >> buf) {
+    tokens.push_back(buf);
+  }
+  return tokens;
+}
+
+
 void send_message(int sock, const string& message) {
-  string message_newline = message + "\n";
+  string message_newline = message + "\n"; // Used to get newlines to work
   const char *message_char = message_newline.c_str();
   write(sock, message_char, message_newline.size());
-  // write(sock, "\n", message.size());
-}
-
-
-// Helper method for the split function
-vector<string> &split(const string &s, char delim, vector<string> &elems) {
-    stringstream ss(s);
-    string item;
-    while (getline(ss, item, delim)) {
-        elems.push_back(item);
-    }
-    return elems;
-}
-
-// String splitting based on a given delimeter
-vector<string> split(const string &s, char delim) {
-    vector<string> elems;
-    split(s, delim, elems);
-    return elems;
 }
 
 
@@ -193,12 +151,12 @@ void send_file(int sock, const string& file_path) {
     send_message(sock, "Error: problem with opening the file"); // TODO change this?
   }
   
-  // Now that it seems to be okay, let's print out the result! Start with some required headers, then the full file.
+  // Seems to be okay. Print OK status, followed by the date.
   send_message(sock, "\n" + http_type + " 200 OK");
-  send_message(sock, "Date: " + current_date_time()); // TODO change date to say name of month to make it clear
+  send_message(sock, current_date_time());
 
-  // file types to support: html, txt, jpg, and gif. Seems like types text/html go together, though.
-  // Algorithm: take file path, split based on periods. then go to the LAST one, which gives file extension.
+  // Content-Types to support: html, txt, jpg, and gif. Seems like types text/html go together, though.
+  // Take file path, split based on periods. then go to the LAST one, which gives us file extension.
   vector<string> file_path_split = split(file_path, '.');
   string file_extension = file_path_split.at(file_path_split.size() - 1);
   if (file_extension == "html" || file_extension == "text") {
@@ -211,7 +169,7 @@ void send_file(int sock, const string& file_path) {
     send_message(sock, "Content-Type: unknown"); // TODO: want to change this?
   }
 
-  // Now do length TODO better way?
+  // Content-Length
   FILE *p_file = fopen(file_path.c_str(), "rb");
   fseek(p_file, 0, SEEK_END);
   int size = ftell(p_file);
@@ -221,7 +179,7 @@ void send_file(int sock, const string& file_path) {
   string output = sstm.str();
   send_message(sock, output);
   
-  // Now print the HTML! Whew!
+  // Now print the HTML
   send_message(sock, "");
   while ((nread = read(fd, buf, sizeof(buf))) > 0) 
     write(sock, buf, nread);
@@ -229,8 +187,6 @@ void send_file(int sock, const string& file_path) {
 }
 
 
-
-// Now check if it exists and, furthermore, if it is readable
 bool validate_file(int sock, const string& file_path) {
 
   // Check to avoid visiting the parent path
@@ -242,7 +198,6 @@ bool validate_file(int sock, const string& file_path) {
   // Check permission
   struct stat results;  
   const char *filename_char = file_path.c_str();
-
   if (stat(filename_char, &results) != 0) {
     send_message(sock, http_type + " 404: Not Found");
     return false;
@@ -254,28 +209,39 @@ bool validate_file(int sock, const string& file_path) {
 }
 
 
-/*
-// Checks if the GET request is well formed
-bool parse_get_request(int sock, string request, string& file_path, string& request_suffix) {
-  //string document_root = "~/cs339/csci339_web_server";
-  //string document_root = "/home/cs-faculty/fern";
-  string document_root = ".";
-  string rel_file_path, abs_file_path;
-  int space_index;
-  file_path = "joi";
-
-  if (request.find("GET") == 0 and request.size() >= 4) {
-    // The request string starts with "GET".
-    request = request.substr(4);
-    cout << "after taking out \'GET\', request = " << request << endl;
-
-    // Parse the file name, and modify protocol to be 1.1 if necessary
-    if ((space_index = request.find(" ")) > 0 and request.size() >= space_index + 1) {
-      file_path = document_root + request.substr(0, space_index);
-      request_suffix = request.substr(space_index + 1);
-      return true;
-    } 
-  }
-  return false;
+vector<string> &split(const string &s, char delim, vector<string> &elems) {
+    stringstream ss(s);
+    string item;
+    while (getline(ss, item, delim)) {
+        elems.push_back(item);
+    }
+    return elems;
 }
-*/
+
+
+vector<string> split(const string &s, char delim) {
+    vector<string> elems;
+    split(s, delim, elems);
+    return elems;
+}
+
+string current_date_time() {
+  string return_date = "Date: ";
+  time_t now = time(0);
+  char* dt = ctime(&now);
+  tm *gmtm = gmtime(&now);
+  string date_local = string(dt);
+  date_local = date_local.erase(date_local.find_last_not_of(" \n\r\t") + 1);
+
+  // Now put the UTC time (for completeness/clarity)
+  int hour = gmtm->tm_hour;
+  int min = gmtm->tm_min;
+  int sec = gmtm->tm_sec;
+  ostringstream convert_hour;
+  ostringstream convert_min;
+  ostringstream convert_sec;
+  convert_hour << hour;
+  convert_min << min;
+  convert_sec << sec;
+  return "Date: " + date_local + " (UTC time: " + convert_hour.str() + ":" + convert_min.str() + ":" + convert_sec.str() + ")";
+}

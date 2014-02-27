@@ -18,14 +18,16 @@ Documentation for our methods is in the server.h file. For additional details, s
 #include <sstream>
 #include <algorithm>
 #include <iterator>
+#include <mutex>
 
 
 // TODO: Convert char arrays into C++ strings?
 
-
+const int TIMEOUT_CONST = 10;
 
 std::string document_root;             // File path to prepend to local path
-std::string http_type = "HTTP/1.0";    // Default to 1.0
+int thread_count;                      // Global count of open threads
+std::mutex count_lock;                 // Lock for the global count of open threads
 
 
 int main(int argc, char **argv) {
@@ -37,8 +39,7 @@ int main(int argc, char **argv) {
   document_root = argv[2];
   int port = atoi(argv[4]);
 
-  // Vector of threads
-  std::vector<pthread_t> threads;
+  thread_count = 0;
 
   // Create initial socket.
   int domain = AF_INET;
@@ -66,18 +67,23 @@ int main(int argc, char **argv) {
 
   // Continually listen to new requests and spawn new threads for each one
   while(true){
-    std::cout << "here at start of loop" << std::endl;
+    // std::cout << "here at start of loop where we make threads" << std::endl;
+    std::cout << "There are " << thread_count << " connecetions open right now" << std::endl;
     struct sockaddr_in remote;
     unsigned int remotelen = sizeof(remote);
     int temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
-    std::cout << "accept a connection (before creating the thread), temp_sock = " << temp_sock << std::endl;
+    // std::cout << "accept a connection (before creating the thread), temp_sock = " << temp_sock << std::endl;
     pthread_t thread;
     int iret = pthread_create( &thread, NULL, manage_conn, (void*) &temp_sock);
-    threads.push_back(thread); 
-    std::cout << "before thread joining" << std::endl;
-    //pthread_join(thread, NULL);
+    change_count(1);
   }
   return 0;
+}
+
+void change_count(int delta) {
+  count_lock.lock();
+  thread_count += delta;
+  count_lock.unlock();
 }
 
 
@@ -85,24 +91,56 @@ int main(int argc, char **argv) {
 void *manage_conn(void *ptr) { 
   int value = 1;
   int fd, nread, nrecv;
-  int temp_sock = *((int *) ptr);
-  // std::cout << "temp_sock is " << temp_sock << std::endl;
+  int sock = *((int *) ptr);
+  // std::cout << "sock is " << sock << std::endl;
   char buf[4096];
+  std::string http_type;
 
-  std::cout << "In the manage_conn loop" << std::endl;
+  std::cout << "Right before receiving message from the buffer" << std::endl;
   //  TODO while loop (if HTTP/1.1, check time out)
-  nrecv = recv(temp_sock, buf, sizeof(buf), 0); // Returns number of bytes read in the buffer
-  // std::cout << "Current buffer: " << buf << std::endl;
-  std::cout << "End of buffer." << std::endl;
-  parse_request(temp_sock, buf);
 
-  std::cout << "This never gets printed!" << std::endl;
+  char data;
+  
+
+  do {
+    // set timeout
+    struct timeval timeout;      
+    timeout.tv_sec = TIMEOUT_CONST / thread_count;
+    timeout.tv_usec = 0;
+
+    if (setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+          sizeof(timeout)) < 0)
+      send_message(sock, "setsockopt failed\n");
+
+    if (setsockopt (sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+          sizeof(timeout)) < 0)
+      send_message(sock, "setsockopt failed\n");
+
+  // std::string old_buffer_string;
+  // std::string new_buffer_string = ""; 
+  // do { 
+    // old_buffer_string = new_buffer_string;
+    // std::cout << "old string: " << old_buffer_string << std::endl;
+    if (nrecv = recv(sock, buf, sizeof(buf), 0) >= 0) {// Returns number of bytes read in the buffer
+    // new_buffer_string = std::string(buf);
+    // std::cout << "new string " << new_buffer_string << std::endl;
+  // } while (new_buffer_string != old_buffer_string.substr(2));
+  // so if the new string is equal to the old string (TAKING AWAY the two leading chars from old string) then it works
+  // std::cout << "End of buffer." << std::endl;
+      parse_request(sock, http_type, buf);
+    }
+
+    std::cout << "Connection still alive  = " << recv(sock, &data, 1, MSG_PEEK) << std::endl;
+
+  } while (http_type == "HTTP/1.1" && (recv(sock, &data, 1, MSG_PEEK)) >= 0);
+  close(sock);
+  change_count(-1);
 }
 
-
-void parse_request(int sock, char* buf) {
+void parse_request(int sock, std::string& http_type, char* buf) {
   std::string request(buf);
   std::string full_path;
+  http_type = "HTTP/1.0";    // Default to 1.0
   std::string request_suffix;
 
   // Check the initial request line if it is of the form GET [directory] /HTTP{1.0, 1.1}
@@ -115,15 +153,12 @@ void parse_request(int sock, char* buf) {
     request_suffix = tokens.at(2);
  
     // Now check for permissions. validate_file method will print out 403 and 404 messages if needed
-    if (validate_file(sock, full_path)) {
-      send_file(sock, full_path);
+    if (validate_file(sock, http_type, full_path)) {
+      send_file(sock, http_type, full_path);
     } 
   } else {
     send_message(sock, "HTTP/1.0 400 Bad Request");
   }
-
-  // Sources we read suggest closing after each client request. (TODO: Actually, this gives me some problems...)
-  close(sock);
 }
 
 
@@ -145,7 +180,7 @@ void send_message(int sock, const std::string& message) {
 }
 
 
-void send_file(int sock, const std::string& file_path) {
+void send_file(int sock, const std::string& http_type, const std::string& file_path) {
   // send the file back
   // std::cout << "sending file " << file_path << std::endl;
   char buf[1000];
@@ -194,7 +229,7 @@ void send_file(int sock, const std::string& file_path) {
 }
 
 
-bool validate_file(int sock, const std::string& file_path) {
+bool validate_file(int sock, const std::string& http_type, const std::string& file_path) {
 
   // Check to avoid visiting the parent path
   if (file_path.find("../") != std::string::npos) {

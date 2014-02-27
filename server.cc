@@ -5,6 +5,9 @@ CSCI 339: Distributed Systems, Homework 1
 Documentation for our methods is in the server.h file. For additional details, see our writeup.
 */
 
+// TODO: character return
+// TODO: Default to index.html
+
 #include "server.h"
 #include <stdio.h>
 #include <cstdlib>
@@ -121,7 +124,7 @@ void *manage_conn(void *ptr) {
   // do { 
     // old_buffer_string = new_buffer_string;
     // std::cout << "old string: " << old_buffer_string << std::endl;
-    if (nrecv = recv(sock, buf, sizeof(buf), 0) >= 0) {// Returns number of bytes read in the buffer
+    if ((nrecv = recv(sock, buf, sizeof(buf), 0)) >= 0) {// Returns number of bytes read in the buffer
     // new_buffer_string = std::string(buf);
     // std::cout << "new string " << new_buffer_string << std::endl;
   // } while (new_buffer_string != old_buffer_string.substr(2));

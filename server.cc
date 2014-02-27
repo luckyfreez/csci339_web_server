@@ -5,9 +5,6 @@ CSCI 339: Distributed Systems, Homework 1
 Documentation for our methods is in the server.h file. For additional details, see our writeup.
 */
 
-// TODO: Convert char arrays into C++ strings?
-// TODO: Convert all strings to std::strings, same with anything else that uses std...
-
 #include "server.h"
 #include <stdio.h>
 #include <cstdlib>
@@ -22,31 +19,33 @@ Documentation for our methods is in the server.h file. For additional details, s
 #include <algorithm>
 #include <iterator>
 
-using namespace std;
+
+// TODO: Convert char arrays into C++ strings?
 
 
-string document_root;             // File path to prepend to local path
-string http_type = "HTTP/1.0";    // Default to 1.0
+
+std::string document_root;             // File path to prepend to local path
+std::string http_type = "HTTP/1.0";    // Default to 1.0
 
 
 int main(int argc, char **argv) {
 
   if (argc != 5 || (strcmp(argv[1],"-document_root") != 0 || strcmp(argv[3],"-port") != 0)) {
-    cout << "Usage: ./server -document_root [file_path] -port [port_num]" << endl;
+    std::cout << "Usage: ./server -document_root [file_path] -port [port_num]" << std::endl;
     return -1;
   }
   document_root = argv[2];
   int port = atoi(argv[4]);
 
   // Vector of threads
-  vector<pthread_t> threads;
+  std::vector<pthread_t> threads;
 
   // Create initial socket.
   int domain = AF_INET;
   int type = SOCK_STREAM;
   int protocol = IPPROTO_TCP;
   int sock = socket(domain, type, protocol);
-  // cout << "sock = " << sock << endl;
+  // std::cout << "sock = " << sock << std::endl;
 
   // Allow socket reuse
   int optval = 1;
@@ -58,19 +57,19 @@ int main(int argc, char **argv) {
   myaddr.sin_family = AF_INET;
   myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
   if(bind(sock, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) exit(1);
-  // cout << "bind succeeded" << endl;
+  // std::cout << "bind succeeded" << std::endl;
 
   // Listen
   int backlog = 100;
   if(listen(sock, backlog) < 0) exit(1);
-  // cout << "listen succeeded" << endl;
+  // std::cout << "listen succeeded" << std::endl;
 
   // Continually listen to new requests and spawn new threads for each one
   while(true){
     unsigned int remotelen = sizeof(remote);
-    // cout << "here" << endl;
+    // std::cout << "here" << std::endl;
     int temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
-    // cout << "accept a connection (before creating the thread), temp_sock = " << temp_sock << endl;
+    // std::cout << "accept a connection (before creating the thread), temp_sock = " << temp_sock << std::endl;
     pthread_t thread;
     int iret = pthread_create( &thread, NULL, manage_conn, (void*) &temp_sock);
     threads.push_back(thread); 
@@ -85,24 +84,24 @@ void *manage_conn(void *ptr) {
   int value = 1;
   int fd, nread, nrecv;
   int temp_sock = *((int *) ptr);
-  // cout << "temp_sock is " << temp_sock << endl;
+  // std::cout << "temp_sock is " << temp_sock << std::endl;
   char buf[4096];
   while (true) {
     nrecv = recv(temp_sock, buf, sizeof(buf), 0); // Returns number of bytes read in the buffer
-    // cout << "Current buffer: " << buf << endl;
-    // cout << "End of buffer." << endl;
+    // std::cout << "Current buffer: " << buf << std::endl;
+    // std::cout << "End of buffer." << std::endl;
     parse_request(temp_sock, buf);
   }
 }
 
 
 void parse_request(int sock, char* buf) {
-  string request(buf);
-  string full_path;
-  string request_suffix;
+  std::string request(buf);
+  std::string full_path;
+  std::string request_suffix;
 
   // Check the initial request line if it is of the form GET [directory] /HTTP{1.0, 1.1}
-  vector<string> tokens = check_initial_request(sock, request);
+  std::vector<std::string> tokens = check_initial_request(sock, request);
   if (tokens.size() >= 3 && tokens.at(0) == "GET" && (tokens.at(2) == "HTTP/1.0" || tokens.at(2) == "HTTP/1.1")) {
     if (tokens.at(2) == "HTTP/1.1") {
       http_type = "HTTP/1.1";
@@ -123,10 +122,10 @@ void parse_request(int sock, char* buf) {
 }
 
 
-vector<string> check_initial_request(int sock, string request) {
-  stringstream ss(request);
-  string buf;
-  vector<string> tokens; // Elements here are strings from request, split by whitespaces
+std::vector<std::string> check_initial_request(int sock, std::string request) {
+  std::stringstream ss(request);
+  std::string buf;
+  std::vector<std::string> tokens; // Elements here are strings from request, split by whitespaces
   while (ss >> buf) {
     tokens.push_back(buf);
   }
@@ -134,16 +133,16 @@ vector<string> check_initial_request(int sock, string request) {
 }
 
 
-void send_message(int sock, const string& message) {
-  string message_newline = message + "\n"; // Used to get newlines to work
+void send_message(int sock, const std::string& message) {
+  std::string message_newline = message + "\n"; // Used to get newlines to work
   const char *message_char = message_newline.c_str();
   write(sock, message_char, message_newline.size());
 }
 
 
-void send_file(int sock, const string& file_path) {
+void send_file(int sock, const std::string& file_path) {
   // send the file back
-  // cout << "sending file " << file_path << endl;
+  // std::cout << "sending file " << file_path << std::endl;
   char buf[1000];
   int nread;
   int fd = open(file_path.c_str(), O_RDONLY);
@@ -157,8 +156,8 @@ void send_file(int sock, const string& file_path) {
 
   // Content-Types to support: html, txt, jpg, and gif. Seems like types text/html go together, though.
   // Take file path, split based on periods. then go to the LAST one, which gives us file extension.
-  vector<string> file_path_split = split(file_path, '.');
-  string file_extension = file_path_split.at(file_path_split.size() - 1);
+  std::vector<std::string> file_path_split = split(file_path, '.');
+  std::string file_extension = file_path_split.at(file_path_split.size() - 1);
   if (file_extension == "html" || file_extension == "text") {
     send_message(sock, "Content-Type: text/html");
   } else if (file_extension == "jpg") {
@@ -174,9 +173,9 @@ void send_file(int sock, const string& file_path) {
   fseek(p_file, 0, SEEK_END);
   int size = ftell(p_file);
   fclose(p_file);
-  stringstream sstm;
+  std::stringstream sstm;
   sstm << "Content-Length: " << size;
-  string output = sstm.str();
+  std::string output = sstm.str();
   send_message(sock, output);
   
   // Now print the HTML
@@ -187,10 +186,10 @@ void send_file(int sock, const string& file_path) {
 }
 
 
-bool validate_file(int sock, const string& file_path) {
+bool validate_file(int sock, const std::string& file_path) {
 
   // Check to avoid visiting the parent path
-  if (file_path.find("../") != string::npos) {
+  if (file_path.find("../") != std::string::npos) {
     send_message(sock, "Error: bad request -- trying to visit parent directory"); // TODO: Make this HTTP request?
     return false;
   }
@@ -209,9 +208,9 @@ bool validate_file(int sock, const string& file_path) {
 }
 
 
-vector<string> &split(const string &s, char delim, vector<string> &elems) {
-    stringstream ss(s);
-    string item;
+std::vector<std::string> &split(const std::string &s, char delim, std::vector<std::string> &elems) {
+    std::stringstream ss(s);
+    std::string item;
     while (getline(ss, item, delim)) {
         elems.push_back(item);
     }
@@ -219,27 +218,27 @@ vector<string> &split(const string &s, char delim, vector<string> &elems) {
 }
 
 
-vector<string> split(const string &s, char delim) {
-    vector<string> elems;
+std::vector<std::string> split(const std::string &s, char delim) {
+    std::vector<std::string> elems;
     split(s, delim, elems);
     return elems;
 }
 
-string current_date_time() {
-  string return_date = "Date: ";
+std::string current_date_time() {
+  std::string return_date = "Date: ";
   time_t now = time(0);
   char* dt = ctime(&now);
   tm *gmtm = gmtime(&now);
-  string date_local = string(dt);
+  std::string date_local = std::string(dt);
   date_local = date_local.erase(date_local.find_last_not_of(" \n\r\t") + 1);
 
   // Now put the UTC time (for completeness/clarity)
   int hour = gmtm->tm_hour;
   int min = gmtm->tm_min;
   int sec = gmtm->tm_sec;
-  ostringstream convert_hour;
-  ostringstream convert_min;
-  ostringstream convert_sec;
+  std::ostringstream convert_hour;
+  std::ostringstream convert_min;
+  std::ostringstream convert_sec;
   convert_hour << hour;
   convert_min << min;
   convert_sec << sec;

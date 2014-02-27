@@ -14,17 +14,21 @@ main()
   const char *message2 = "Thread 2";
 
   
-  iret1 = pthread_create( &thread1, NULL, print_message_function, (void*) message1);
-  iret2 = pthread_create( &thread2, NULL, print_message_function, (void*) message2);
+  while (true) {
+    std::cout << "Beginning of the loop" << std::endl;
+    iret1 = pthread_create( &thread1, NULL, print_message_function, (void*) message1);
+    iret2 = pthread_create( &thread2, NULL, print_message_function, (void*) message2);
 
-  pthread_join(thread1, NULL);
-  pthread_join(thread2, NULL);
+    //pthread_join(thread1, NULL);
+    //pthread_join(thread2, NULL);
+  }
 
 }
 
 void *print_message_function( void *ptr )
 {
-  while (true) {
+  //while (true) {
+  for (int i = 0; i < 100000; i++) {
     std::cout << (char *)ptr << std::endl;
   }
 }

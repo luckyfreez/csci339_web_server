@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
   if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval) < 0) exit(1);
 
   // Bind 
-  struct sockaddr_in myaddr, remote;
+  struct sockaddr_in myaddr;
   myaddr.sin_port = htons(port);
   myaddr.sin_family = AF_INET;
   myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -66,32 +66,37 @@ int main(int argc, char **argv) {
 
   // Continually listen to new requests and spawn new threads for each one
   while(true){
+    std::cout << "here at start of loop" << std::endl;
+    struct sockaddr_in remote;
     unsigned int remotelen = sizeof(remote);
-    // std::cout << "here" << std::endl;
     int temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
-    // std::cout << "accept a connection (before creating the thread), temp_sock = " << temp_sock << std::endl;
+    std::cout << "accept a connection (before creating the thread), temp_sock = " << temp_sock << std::endl;
     pthread_t thread;
     int iret = pthread_create( &thread, NULL, manage_conn, (void*) &temp_sock);
     threads.push_back(thread); 
-    pthread_join(thread, NULL);
+    std::cout << "before thread joining" << std::endl;
+    //pthread_join(thread, NULL);
   }
   return 0;
 }
 
 
-// TODO: detect two carriage returns to do this
+// TODO: detect two carriage returns to do this (?)
 void *manage_conn(void *ptr) { 
   int value = 1;
   int fd, nread, nrecv;
   int temp_sock = *((int *) ptr);
   // std::cout << "temp_sock is " << temp_sock << std::endl;
   char buf[4096];
-  while (true) {
-    nrecv = recv(temp_sock, buf, sizeof(buf), 0); // Returns number of bytes read in the buffer
-    // std::cout << "Current buffer: " << buf << std::endl;
-    // std::cout << "End of buffer." << std::endl;
-    parse_request(temp_sock, buf);
-  }
+
+  std::cout << "In the manage_conn loop" << std::endl;
+  //  TODO while loop (if HTTP/1.1, check time out)
+  nrecv = recv(temp_sock, buf, sizeof(buf), 0); // Returns number of bytes read in the buffer
+  // std::cout << "Current buffer: " << buf << std::endl;
+  std::cout << "End of buffer." << std::endl;
+  parse_request(temp_sock, buf);
+
+  std::cout << "This never gets printed!" << std::endl;
 }
 
 
@@ -177,7 +182,10 @@ void send_file(int sock, const std::string& file_path) {
   sstm << "Content-Length: " << size;
   std::string output = sstm.str();
   send_message(sock, output);
-  
+ 
+  // Some optional stuff
+  send_message(sock, "Server: Daniel's Server");
+ 
   // Now print the HTML
   send_message(sock, "");
   while ((nread = read(fd, buf, sizeof(buf))) > 0) 

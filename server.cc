@@ -5,6 +5,9 @@ CSCI 339: Distributed Systems, Homework 1
 Documentation for our methods is in the server.h file. For additional details, see our writeup.
 */
 
+// TODO: character return
+// TODO: Default to index.html
+
 #include "server.h"
 #include <stdio.h>
 #include <cstdlib>

@@ -13,6 +13,8 @@ Documentation for our methods is in the server.h file. For additional details, s
 #include <netinet/in.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include <vector>
 #include <ctime>
 #include <sstream>
@@ -52,7 +54,7 @@ int main(int argc, char **argv) {
   int optval = 1;
   if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval) < 0) exit(1);
 
-  // Bind 
+  // Bind
   struct sockaddr_in myaddr;
   myaddr.sin_port = htons(port);
   myaddr.sin_family = AF_INET;
@@ -88,7 +90,7 @@ void change_count(int delta) {
 
 
 // TODO: detect two carriage returns to do this (?)
-void *manage_conn(void *ptr) { 
+void *manage_conn(void *ptr) {
   int value = 1;
   int fd, nread, nrecv;
   int sock = *((int *) ptr);
@@ -100,11 +102,11 @@ void *manage_conn(void *ptr) {
   //  TODO while loop (if HTTP/1.1, check time out)
 
   char data;
-  
+
 
   do {
     // set timeout
-    struct timeval timeout;      
+    struct timeval timeout;
     timeout.tv_sec = TIMEOUT_CONST / thread_count;
     timeout.tv_usec = 0;
 
@@ -117,11 +119,11 @@ void *manage_conn(void *ptr) {
       send_message(sock, "setsockopt failed\n");
 
   // std::string old_buffer_string;
-  // std::string new_buffer_string = ""; 
-  // do { 
+  // std::string new_buffer_string = "";
+  // do {
     // old_buffer_string = new_buffer_string;
     // std::cout << "old string: " << old_buffer_string << std::endl;
-    if (nrecv = recv(sock, buf, sizeof(buf), 0) >= 0) {// Returns number of bytes read in the buffer
+    if ((nrecv = recv(sock, buf, sizeof(buf), 0)) >= 0) {// Returns number of bytes read in the buffer
     // new_buffer_string = std::string(buf);
     // std::cout << "new string " << new_buffer_string << std::endl;
   // } while (new_buffer_string != old_buffer_string.substr(2));
@@ -151,11 +153,11 @@ void parse_request(int sock, std::string& http_type, char* buf) {
     }
     full_path = document_root + tokens.at(1);
     request_suffix = tokens.at(2);
- 
+
     // Now check for permissions. validate_file method will print out 403 and 404 messages if needed
     if (validate_file(sock, http_type, full_path)) {
       send_file(sock, http_type, full_path);
-    } 
+    }
   } else {
     send_message(sock, "HTTP/1.0 400 Bad Request");
   }
@@ -189,7 +191,7 @@ void send_file(int sock, const std::string& http_type, const std::string& file_p
   if (fd == -1) {
     send_message(sock, "Error: problem with opening the file"); // TODO change this?
   }
-  
+
   // Seems to be okay. Print OK status, followed by the date.
   send_message(sock, "\n" + http_type + " 200 OK");
   send_message(sock, current_date_time());
@@ -217,13 +219,13 @@ void send_file(int sock, const std::string& http_type, const std::string& file_p
   sstm << "Content-Length: " << size;
   std::string output = sstm.str();
   send_message(sock, output);
- 
+
   // Some optional stuff
   send_message(sock, "Server: Daniel's Server");
- 
+
   // Now print the HTML
   send_message(sock, "");
-  while ((nread = read(fd, buf, sizeof(buf))) > 0) 
+  while ((nread = read(fd, buf, sizeof(buf))) > 0)
     write(sock, buf, nread);
   close (fd);
 }
@@ -238,7 +240,7 @@ bool validate_file(int sock, const std::string& http_type, const std::string& fi
   }
 
   // Check permission
-  struct stat results;  
+  struct stat results;
   const char *filename_char = file_path.c_str();
   if (stat(filename_char, &results) != 0) {
     send_message(sock, http_type + " 404: Not Found");
@@ -246,7 +248,7 @@ bool validate_file(int sock, const std::string& http_type, const std::string& fi
   }
   if (!(results.st_mode & S_IROTH)) {
     send_message(sock, http_type + " 403: Forbidden");
-  } 
+  }
   return true;
 }
 

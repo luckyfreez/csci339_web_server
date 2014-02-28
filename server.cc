@@ -25,6 +25,7 @@ Documentation for our methods is in the server.h file. For additional details, s
 
 
 const int TIMEOUT_CONST = 300;
+const int MAX_CONNECTIONS = 1000;
 
 std::string document_root;             // File path to prepend to local path
 int thread_count;                      // Global count of open threads
@@ -69,12 +70,14 @@ int main(int argc, char **argv) {
 
   // Continually listen to new requests and spawn new threads for each one
   while(true){
-    struct sockaddr_in remote;
-    unsigned int remotelen = sizeof(remote);
-    int temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
-    pthread_t thread;
-    change_count(1);
-    int iret = pthread_create( &thread, NULL, manage_conn, (void*) &temp_sock);
+    if (thread_count < MAX_CONNECTIONS) {  // Handles at most 1000 open connections at the same time
+      struct sockaddr_in remote;
+      unsigned int remotelen = sizeof(remote);
+      int temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
+      pthread_t thread;
+      change_count(1);
+      int iret = pthread_create( &thread, NULL, manage_conn, (void*) &temp_sock);
+    }
   }
   return 0;
 }

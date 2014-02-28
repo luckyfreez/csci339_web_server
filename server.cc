@@ -14,17 +14,17 @@ Documentation for our methods is in the server.h file. For additional details, s
 #include <netinet/in.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
-#include <unistd.h>
 #include <vector>
 #include <ctime>
 #include <sstream>
 #include <algorithm>
 #include <iterator>
 #include <mutex>
+#include <sys/syscall.h>   // For support on mac
+#include <unistd.h>        // For support on mac
 
 
-const int TIMEOUT_CONST = 10;
+const int TIMEOUT_CONST = 300;
 
 std::string document_root;             // File path to prepend to local path
 int thread_count;                      // Global count of open threads
@@ -42,12 +42,13 @@ int main(int argc, char **argv) {
 
   thread_count = 0;
 
+  std::cout << "Server initializing..." << std::endl;
+
   // Create initial socket.
   int domain = AF_INET;
   int type = SOCK_STREAM;
   int protocol = IPPROTO_TCP;
   int sock = socket(domain, type, protocol);
-  // std::cout << "sock = " << sock << std::endl;
 
   // Allow socket reuse
   int optval = 1;
@@ -58,22 +59,19 @@ int main(int argc, char **argv) {
   myaddr.sin_port = htons(port);
   myaddr.sin_family = AF_INET;
   myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  if(bind(sock, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) exit(1);
-  // std::cout << "bind succeeded" << std::endl;
+  if (bind(sock, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) exit(1);
+  std::cout << "Binded at socket " << sock << "." << std::endl;
 
   // Listen
   int backlog = 100;
-  if(listen(sock, backlog) < 0) exit(1);
-  // std::cout << "listen succeeded" << std::endl;
+  if (listen(sock, backlog) < 0) exit(1);
+  std::cout << "Started listening" << "." << std::endl;
 
   // Continually listen to new requests and spawn new threads for each one
   while(true){
-    // std::cout << "here at start of loop where we make threads" << std::endl;
-    std::cout << "There are " << thread_count << " connecetions open right now" << std::endl;
     struct sockaddr_in remote;
     unsigned int remotelen = sizeof(remote);
     int temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
-    // std::cout << "accept a connection (before creating the thread), temp_sock = " << temp_sock << std::endl;
     pthread_t thread;
     change_count(1);
     int iret = pthread_create( &thread, NULL, manage_conn, (void*) &temp_sock);
@@ -89,12 +87,14 @@ void change_count(int delta) {
 
 
 void *manage_conn(void *ptr) {
-  int fd, nread, nrecv;
+  int fd;
   int sock = *((int *) ptr);
   char buf[4096];
   char peek_buf;  // used in the recv to check if a socket is still open
   std::string http_type;
 
+  std::cout << "[Socket " << sock << "] Opened for new connection." << std::endl;
+  std::cout << "Number of open connection: " << thread_count << std::endl;
 
   do {
     // set timeout
@@ -102,38 +102,38 @@ void *manage_conn(void *ptr) {
     timeout.tv_sec = TIMEOUT_CONST / thread_count;
     timeout.tv_usec = 0;
 
-    if (setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
-          sizeof(timeout)) < 0)
+    if (setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
       send_message(sock, "setsockopt failed\n");
+      close(sock);
+    }
 
-    if (setsockopt (sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
-          sizeof(timeout)) < 0)
+    if (setsockopt (sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
       send_message(sock, "setsockopt failed\n");
+      close(sock);
+    }
 
     std::string request = "";
     while (!(request.length() >= 2 && is_char_return(request.at(request.length() - 2)) ) &&
            recv(sock, &peek_buf, 1, MSG_PEEK) >= 0) {
-        nrecv = recv(sock, buf, sizeof(buf), 0);
-        std::cout << "reading in request " << buf << std::endl;
-        std::string tmp(buf);
-        tmp = tmp.substr(0, tmp.length() - 1);  // get rid of the nl (ascii = 10) in the end of each line
-        request = request + tmp;
-        memset(buf, 0, 4096);
+      recv(sock, buf, sizeof(buf), 0);
+      std::string tmp(buf);
+      tmp = tmp.substr(0, tmp.length() - 1);  // Get rid of the nl (ascii = 10) in the end of each line
+      request = request + tmp;
+      memset(buf, 0, 4096);  // Empty the buffer
     }
     if (request.length() >= 2 && is_char_return(request.at(request.length() - 2)))
-        parse_request(sock, http_type, request);
-
-    std::cout << "Connection still alive  = " << recv(sock, &peek_buf, 1, MSG_PEEK) << std::endl;
+      std::cout << "[Socket " << sock << "] Incoming request - " << request << std::endl;
+      parse_request(sock, http_type, request);
 
   } while (http_type == "HTTP/1.1" && (recv(sock, &peek_buf, 1, MSG_PEEK)) >= 0);
+
   close(sock);
   change_count(-1);
 }
 
 void parse_request(int sock, std::string& http_type, const std::string& request) {
   std::string full_path;
-  http_type = "HTTP/1.0";    // Default to 1.0
-  std::string request_suffix;
+  http_type = "HTTP/1.0";    // Default to 1.0 (for any type that is not HTTP/1.1)
 
   // Check the initial request line if it is of the form GET [directory] /HTTP{1.0, 1.1}
   std::vector<std::string> tokens = check_initial_request(sock, request);
@@ -141,17 +141,16 @@ void parse_request(int sock, std::string& http_type, const std::string& request)
     if (tokens.at(1) == "/") tokens.at(1) = "/index.html";
     if (tokens.at(2) == "HTTP/1.1") http_type = "HTTP/1.1";
     full_path = document_root + tokens.at(1);
-    request_suffix = tokens.at(2);
 
     // Now check for permissions. validate_file method will print out 403 and 404 messages if needed
     if (validate_file(sock, http_type, full_path)) {
       send_file(sock, http_type, full_path);
     }
   } else {
-    send_message(sock, "HTTP/1.0 400 Bad Request");
+    send_message(sock, http_type + " 400: Bad Request");
+    close(sock);
   }
 }
-
 
 std::vector<std::string> check_initial_request(int sock, const std::string& request) {
   std::stringstream ss(request);
@@ -163,26 +162,26 @@ std::vector<std::string> check_initial_request(int sock, const std::string& requ
   return tokens;
 }
 
-
 void send_message(int sock, const std::string& message) {
   std::string message_newline = message + "\n"; // Used to get newlines to work
   const char *message_char = message_newline.c_str();
   write(sock, message_char, message_newline.size());
+  std::cout << "[Socket " << sock << "] Message - " << message << std::endl;
 }
-
 
 void send_file(int sock, const std::string& http_type, const std::string& file_path) {
   // send the file back
-  // std::cout << "sending file " << file_path << std::endl;
   char buf[1000];
   int nread;
   int fd = open(file_path.c_str(), O_RDONLY);
   if (fd == -1) {
-    send_message(sock, "Error: problem with opening the file"); // TODO change this?
+    send_message(sock, http_type + " 500: Internal Server Error");
+    close(sock);
+    return;
   }
 
   // Seems to be okay. Print OK status, followed by the date.
-  send_message(sock, "\n" + http_type + " 200 OK");
+  send_message(sock, http_type + " 200 OK");
   send_message(sock, current_date_time());
 
   // Content-Types to support: html, txt, jpg, and gif. Seems like types text/html go together, though.
@@ -213,53 +212,56 @@ void send_file(int sock, const std::string& http_type, const std::string& file_p
   send_message(sock, "Server: Daniel's and Lucky's Server");
 
   // Now print the HTML
-  send_message(sock, "");
-  while ((nread = read(fd, buf, sizeof(buf))) > 0)
-    write(sock, buf, nread);
+  while ((nread = read(fd, buf, sizeof(buf))) > 0) write(sock, buf, nread);
   close (fd);
+  std::cout << "[Socket " << sock << "] " << "Successfully sent file " << file_path << std::endl;
 }
 
 bool is_char_return(char c) {
-    return (c == '\n' || c == '\r');
+  return (c == '\n' || c == '\r');
 }
-
 
 bool validate_file(int sock, const std::string& http_type, const std::string& file_path) {
 
   // Check to avoid visiting the parent path
   if (file_path.find("../") != std::string::npos) {
-    send_message(sock, "Error: bad request -- trying to visit parent directory"); // TODO: Make this HTTP request?
+    send_message(sock, http_type + " 403: Forbidden");
+    close(sock);
     return false;
   }
 
-  // Check permission
+  // Check if file exists
   struct stat results;
   const char *filename_char = file_path.c_str();
   if (stat(filename_char, &results) != 0) {
     send_message(sock, http_type + " 404: Not Found");
+    close(sock);
     return false;
   }
+  // Check permission
   if (!(results.st_mode & S_IROTH)) {
     send_message(sock, http_type + " 403: Forbidden");
+    close(sock);
+    return false;
   }
   return true;
 }
 
 
 std::vector<std::string> &split(const std::string &s, char delim, std::vector<std::string> &elems) {
-    std::stringstream ss(s);
-    std::string item;
-    while (getline(ss, item, delim)) {
-        elems.push_back(item);
-    }
-    return elems;
+  std::stringstream ss(s);
+  std::string item;
+  while (getline(ss, item, delim)) {
+      elems.push_back(item);
+  }
+  return elems;
 }
 
 
 std::vector<std::string> split(const std::string &s, char delim) {
-    std::vector<std::string> elems;
-    split(s, delim, elems);
-    return elems;
+  std::vector<std::string> elems;
+  split(s, delim, elems);
+  return elems;
 }
 
 std::string current_date_time() {
@@ -280,5 +282,6 @@ std::string current_date_time() {
   convert_hour << hour;
   convert_min << min;
   convert_sec << sec;
-  return "Date: " + date_local + " (UTC time: " + convert_hour.str() + ":" + convert_min.str() + ":" + convert_sec.str() + ")";
+  return "Date: " + date_local + " (UTC time: " + convert_hour.str() + ":" +
+         convert_min.str() + ":" + convert_sec.str() + ")";
 }

@@ -211,6 +211,7 @@ void send_file(int sock, const std::string& http_type, const std::string& file_p
   // Some optional stuff
   send_message(sock, "Server: Daniel's and Lucky's Server");
 
+  send_message(sock, "");
   // Now print the HTML
   while ((nread = read(fd, buf, sizeof(buf))) > 0) write(sock, buf, nread);
   close (fd);

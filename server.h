@@ -9,7 +9,7 @@ Functions should be declared in the same order that they appear in server.cc (ho
 */
 
 
-#ifndef SERVER 
+#ifndef SERVER
 #define SERVER
 #include <string>
 #include <vector>
@@ -18,21 +18,21 @@ Functions should be declared in the same order that they appear in server.cc (ho
 /*
 For a given connection/thread, we take in the request and parse it.
 */
-void *manage_conn(void *ptr);  
+void *manage_conn(void *ptr);
 
 
 /*
-  Given a request, we parse check for correctness. If initial request is malformed, return HTTP 400 error. 
+  Given a request, we parse check for correctness. If initial request is malformed, return HTTP 400 error.
   Otherwise, move on to validating the given file path, which calls other methods that return HTTP statuses.
 */
-void parse_request(int sock, std::string& http_type, char *buf);
+void parse_request(int sock, std::string& http_type, const std::string& request);
 
 
 /*
   Called to check the first line for the client's request, i.e. the GET command. Checks the 1st and 3rd
   args, which should be GET and the HTTP type. We assume the 2nd is file path and stuff after are  headers.
 */
-std::vector<std::string> check_initial_request(int sock, std::string request);
+std::vector<std::string> check_initial_request(int sock, const std::string& request);
 
 
 /*
@@ -45,7 +45,7 @@ void send_message(int sock, const std::string& message);
 /*
   Given a file request from the client, open it and send the HTTP response (if can't open file, error).
   HTTP response includes (at least) the status, date, content-type, content-length, and the actual file.
-*/ 
+*/
 void send_file(int sock, const std::string& http_type, const std::string& file_path);
 
 
@@ -78,5 +78,10 @@ std::string current_date_time();
   Change the global counter of open thread by delta in a race-condition-free manner.
 */
 void change_count(int delta);
+
+/*
+ Check if the input character is \r or \n
+*/
+bool is_char_return(char c);
 
 #endif

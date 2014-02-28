@@ -5,8 +5,6 @@ CSCI 339: Distributed Systems, Homework 1
 Documentation for our methods is in the server.h file. For additional details, see our writeup.
 */
 
-// TODO: character return
-// TODO: Default to index.html
 
 #include "server.h"
 #include <stdio.h>
@@ -25,8 +23,6 @@ Documentation for our methods is in the server.h file. For additional details, s
 #include <iterator>
 #include <mutex>
 
-
-// TODO: Convert char arrays into C++ strings?
 
 const int TIMEOUT_CONST = 10;
 
@@ -79,8 +75,8 @@ int main(int argc, char **argv) {
     int temp_sock = accept(sock, (struct sockaddr*)&remote, &remotelen);
     // std::cout << "accept a connection (before creating the thread), temp_sock = " << temp_sock << std::endl;
     pthread_t thread;
-    int iret = pthread_create( &thread, NULL, manage_conn, (void*) &temp_sock);
     change_count(1);
+    int iret = pthread_create( &thread, NULL, manage_conn, (void*) &temp_sock);
   }
   return 0;
 }
@@ -92,19 +88,12 @@ void change_count(int delta) {
 }
 
 
-// TODO: detect two carriage returns to do this (?)
 void *manage_conn(void *ptr) {
-  int value = 1;
   int fd, nread, nrecv;
   int sock = *((int *) ptr);
-  // std::cout << "sock is " << sock << std::endl;
   char buf[4096];
+  char peek_buf;  // used in the recv to check if a socket is still open
   std::string http_type;
-
-  std::cout << "Right before receiving message from the buffer" << std::endl;
-  //  TODO while loop (if HTTP/1.1, check time out)
-
-  char data;
 
 
   do {
@@ -121,29 +110,27 @@ void *manage_conn(void *ptr) {
           sizeof(timeout)) < 0)
       send_message(sock, "setsockopt failed\n");
 
-  // std::string old_buffer_string;
-  // std::string new_buffer_string = "";
-  // do {
-    // old_buffer_string = new_buffer_string;
-    // std::cout << "old string: " << old_buffer_string << std::endl;
-    if ((nrecv = recv(sock, buf, sizeof(buf), 0)) >= 0) {// Returns number of bytes read in the buffer
-    // new_buffer_string = std::string(buf);
-    // std::cout << "new string " << new_buffer_string << std::endl;
-  // } while (new_buffer_string != old_buffer_string.substr(2));
-  // so if the new string is equal to the old string (TAKING AWAY the two leading chars from old string) then it works
-  // std::cout << "End of buffer." << std::endl;
-      parse_request(sock, http_type, buf);
+    std::string request = "";
+    while (!(request.length() >= 2 && is_char_return(request.at(request.length() - 2)) ) &&
+           recv(sock, &peek_buf, 1, MSG_PEEK) >= 0) {
+        nrecv = recv(sock, buf, sizeof(buf), 0);
+        std::cout << "reading in request " << buf << std::endl;
+        std::string tmp(buf);
+        tmp = tmp.substr(0, tmp.length() - 1);  // get rid of the nl (ascii = 10) in the end of each line
+        request = request + tmp;
+        memset(buf, 0, 4096);
     }
+    if (request.length() >= 2 && is_char_return(request.at(request.length() - 2)))
+        parse_request(sock, http_type, request);
 
-    std::cout << "Connection still alive  = " << recv(sock, &data, 1, MSG_PEEK) << std::endl;
+    std::cout << "Connection still alive  = " << recv(sock, &peek_buf, 1, MSG_PEEK) << std::endl;
 
-  } while (http_type == "HTTP/1.1" && (recv(sock, &data, 1, MSG_PEEK)) >= 0);
+  } while (http_type == "HTTP/1.1" && (recv(sock, &peek_buf, 1, MSG_PEEK)) >= 0);
   close(sock);
   change_count(-1);
 }
 
-void parse_request(int sock, std::string& http_type, char* buf) {
-  std::string request(buf);
+void parse_request(int sock, std::string& http_type, const std::string& request) {
   std::string full_path;
   http_type = "HTTP/1.0";    // Default to 1.0
   std::string request_suffix;
@@ -151,9 +138,8 @@ void parse_request(int sock, std::string& http_type, char* buf) {
   // Check the initial request line if it is of the form GET [directory] /HTTP{1.0, 1.1}
   std::vector<std::string> tokens = check_initial_request(sock, request);
   if (tokens.size() >= 3 && tokens.at(0) == "GET" && (tokens.at(2) == "HTTP/1.0" || tokens.at(2) == "HTTP/1.1")) {
-    if (tokens.at(2) == "HTTP/1.1") {
-      http_type = "HTTP/1.1";
-    }
+    if (tokens.at(1) == "/") tokens.at(1) = "/index.html";
+    if (tokens.at(2) == "HTTP/1.1") http_type = "HTTP/1.1";
     full_path = document_root + tokens.at(1);
     request_suffix = tokens.at(2);
 
@@ -167,7 +153,7 @@ void parse_request(int sock, std::string& http_type, char* buf) {
 }
 
 
-std::vector<std::string> check_initial_request(int sock, std::string request) {
+std::vector<std::string> check_initial_request(int sock, const std::string& request) {
   std::stringstream ss(request);
   std::string buf;
   std::vector<std::string> tokens; // Elements here are strings from request, split by whitespaces
@@ -210,7 +196,7 @@ void send_file(int sock, const std::string& http_type, const std::string& file_p
   } else if (file_extension == "gif") {
     send_message(sock, "Content-Type: gif");
   } else {
-    send_message(sock, "Content-Type: unknown"); // TODO: want to change this?
+    send_message(sock, "Content-Type: fun stuff");
   }
 
   // Content-Length
@@ -224,13 +210,17 @@ void send_file(int sock, const std::string& http_type, const std::string& file_p
   send_message(sock, output);
 
   // Some optional stuff
-  send_message(sock, "Server: Daniel's Server");
+  send_message(sock, "Server: Daniel's and Lucky's Server");
 
   // Now print the HTML
   send_message(sock, "");
   while ((nread = read(fd, buf, sizeof(buf))) > 0)
     write(sock, buf, nread);
   close (fd);
+}
+
+bool is_char_return(char c) {
+    return (c == '\n' || c == '\r');
 }
 
 

@@ -33,7 +33,7 @@ bool parse_get_request(string request, string& file_path, string& request_suffix
       file_path = document_root + request.substr(0, space_index);
       request_suffix = request.substr(space_index + 1);
       return true;
-    } 
+    }
   }
   return false;
 }
@@ -46,7 +46,7 @@ bool validate_file(const string& file_path) {
   }
 
   // Check permission
-  struct stat results;  
+  struct stat results;
   const char *filename_char = file_path.c_str();
 
   if (stat(filename_char, &results) != 0) {
@@ -56,14 +56,19 @@ bool validate_file(const string& file_path) {
 
   if (!(results.st_mode & S_IROTH)) {
     send_error("file not readable");
-  } 
+  }
   return true;
 }
 
 int main(int argc, char **argv) {
+    char test[4000] = "hahaha";
+    cout << "test = " << test  << ", sizeof(test) = " << sizeof(test) << endl;
+    test[0] = '\0';
+    cout << "test = " << test  << ", sizeof(test) = " << sizeof(test) << endl;
 
 
-  while (true) {
+
+  while (false) {
     string request;
     std::getline(std::cin,request);
 
